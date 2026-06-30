@@ -1572,12 +1572,14 @@ window.calcularCambioEfectivo = function() {
                     let latCliente = null;
                     let lngCliente = null;
                     
-                    if(rolActivo === 'cliente' && personalCache[usuarioKeyActivo] && personalCache[usuarioKeyActivo].perfil) {
-                        dirCliente = personalCache[usuarioKeyActivo].perfil.direccion || "";
-                        telCliente = personalCache[usuarioKeyActivo].perfil.telefono || "";
-                        latCliente = personalCache[usuarioKeyActivo].perfil.latitud || null;
-                        lngCliente = personalCache[usuarioKeyActivo].perfil.longitud || null;
+                    if(rolActivo === 'cliente') {
+                        // El cliente no tiene permiso de leer la base de datos general, así que extraemos sus datos directo de su pestaña "Mi Perfil"
+                        dirCliente = document.getElementById('perf-dir').value.trim();
+                        telCliente = document.getElementById('perf-tel').value.trim();
+                        latCliente = document.getElementById('perf-lat').value || null;
+                        lngCliente = document.getElementById('perf-lng').value || null;
                     } else if (cedulaCliente && clientesCache[cedulaCliente]) {
+                        // Los vendedores y administradores sí tienen acceso a la memoria caché de los clientes
                         dirCliente = clientesCache[cedulaCliente].direccion || "";
                         telCliente = clientesCache[cedulaCliente].telefono || "";
                         latCliente = clientesCache[cedulaCliente].latitud || null;
