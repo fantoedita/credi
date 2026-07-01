@@ -225,7 +225,7 @@
                 
                 <label>Cliente (Cédula o Nombre):</label>
                 <div style="display: flex; gap: 10px; margin: 8px 0;">
-                    <input type="text" id="caja-cliente" class="input-field" style="margin: 0; flex-grow: 1;" placeholder="Ingrese Cédula (Ej: 20123456) o Nombre..." onchange="verificarClienteCaja(this.value)">
+                    <input type="text" id="caja-cliente" class="input-field" style="margin: 0; flex-grow: 1;" placeholder="Cédula y presione ENTER (Vacío = EVENTUAL)..." onchange="verificarClienteCaja(this.value)" onkeydown="if(event.key === 'Enter') verificarClienteCaja(this.value)">
                     <button class="btn btn-primary" onclick="verificarClienteCaja(document.getElementById('caja-cliente').value)">Buscar / Validar</button>
                 </div>
 
@@ -728,7 +728,7 @@
 <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         import { getDatabase, ref, set, push, onValue, get, remove, runTransaction, onDisconnect } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
-        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
         const firebaseConfig = {
   apiKey: "AIzaSyAjTTBLHlKdjjVkhxO7GWHEKxjCVJQxMWA",
@@ -1107,6 +1107,28 @@
             }
         };
 
+        window.eliminarUsuarioDelSistema = function(key) {
+            if(rolActivo !== 'administrador') return alert("Permisos insuficientes.");
+            if(confirm("⚠️ ¿Está absolutamente seguro de ELIMINAR a este usuario?\n\nPerderá el acceso al sistema para siempre. Esta acción no se puede deshacer.")) {
+                remove(ref(db, `personal/${key}`)).then(() => {
+                    alert("✅ Usuario eliminado exitosamente del sistema.");
+                }).catch(err => alert("Error al eliminar: " + err.message));
+            }
+        };
+
+        window.enviarCorreoResetClave = function(emailUsuario) {
+            if(rolActivo !== 'administrador') return alert("Permisos insuficientes.");
+            if(!emailUsuario) return alert("Este usuario no tiene un correo válido registrado.");
+            
+            if(confirm(`📧 ¿Desea enviar un enlace seguro de cambio de contraseña al correo:\n${emailUsuario}?`)) {
+                sendPasswordResetEmail(auth, emailUsuario).then(() => {
+                    alert("✅ Enlace enviado. Pídale al usuario que revise su bandeja de entrada (o carpeta Spam) para establecer su nueva contraseña.");
+                }).catch((error) => {
+                    alert("❌ Error al enviar el correo: " + error.message);
+                });
+            }
+        };
+
         window.renderizarGestionUsuarios = function() {
             const container = document.getElementById('lista-gestion-usuarios');
             if(!container) return;
@@ -1118,20 +1140,32 @@
                 let badgeStatus = u.activo ? `<span style="color:var(--success); font-weight:bold;">✅ Acceso Permitido</span>` : `<span style="color:var(--danger); font-weight:bold;">⛔ Acceso Bloqueado</span>`;
                 
                 let btnAccion = u.activo 
-                    ? `<button class="btn btn-danger" style="padding: 5px 10px; font-size:12px; border-radius:4px;" onclick="cambiarEstadoUsuario('${key}', false)">Suspender</button>`
-                    : `<button class="btn btn-success" style="padding: 5px 10px; font-size:12px; border-radius:4px;" onclick="cambiarEstadoUsuario('${key}', true)">Restaurar</button>`;
+                    ? `<button class="btn btn-warning" style="padding: 5px 10px; font-size:12px; border-radius:4px; margin-bottom: 5px; width: 100%; color: #000;" onclick="cambiarEstadoUsuario('${key}', false)">⏸️ Suspender</button>`
+                    : `<button class="btn btn-success" style="padding: 5px 10px; font-size:12px; border-radius:4px; margin-bottom: 5px; width: 100%;" onclick="cambiarEstadoUsuario('${key}', true)">▶️ Restaurar</button>`;
 
-                if(key === usuarioKeyActivo) btnAccion = `<span style="font-size:12px; color:#666; font-weight:bold;">(Tú)</span>`;
+                if(key === usuarioKeyActivo) {
+                    btnAccion = `<span style="font-size:12px; color:#666; font-weight:bold; display:block; margin-bottom:5px; text-align: center;">(Tú - Sesión Actual)</span>`;
+                }
+
+                let btnEliminar = `<button class="btn btn-danger" style="padding: 5px 10px; font-size:12px; border-radius:4px; margin-bottom: 5px; width: 100%;" onclick="eliminarUsuarioDelSistema('${key}')">🗑️ Eliminar</button>`;
+                let btnClave = `<button class="btn btn-primary" style="padding: 5px 10px; font-size:12px; border-radius:4px; width: 100%;" onclick="enviarCorreoResetClave('${u.email}')">🔑 Cambiar Clave</button>`;
+
+                // Si es el usuario actual, ocultamos el botón de eliminar por seguridad
+                if(key === usuarioKeyActivo) btnEliminar = '';
+                // Si no hay correo, ocultamos el botón de cambiar clave
+                if(!u.email) btnClave = '';
 
                 container.innerHTML += `
                     <div style="background:#fff; border:1px solid #ddd; padding:12px; border-radius:8px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
-                        <div>
+                        <div style="flex-grow: 1;">
                             <b style="font-size:15px;">${u.nombre}</b> <span style="${badgeRol} color:white; padding:3px 8px; border-radius:12px; font-size:11px; margin-left:5px; font-weight:bold;">${u.rol.toUpperCase()}</span><br>
                             <span style="color:#555; font-size:13px;">📧 ${u.email || (u.perfil ? 'Cliente Externo' : 'Sin correo')}</span><br>
                             <div style="margin-top:5px; font-size:13px;">${badgeStatus}</div>
                         </div>
-                        <div>
+                        <div style="min-width: 130px; display: flex; flex-direction: column;">
                             ${btnAccion}
+                            ${btnEliminar}
+                            ${btnClave}
                         </div>
                     </div>
                 `;
@@ -1149,7 +1183,7 @@
                     <tr class="row-almacen-item" data-name="${p.nombre.toLowerCase()}" ondblclick="cargarProductoParaEditar('${key}')" title="Doble clic para editar este producto" style="cursor: pointer;">
                         <td><b>${p.nombre}</b>${barcodeDisplay}</td>
                         <td>$${p.precio.toFixed(2)}</td>
-                        <td>${p.stock}</td>
+                        <td>${parseFloat(p.stock.toFixed(3))}</td>
                         <td>
                             <button class="btn btn-danger" style="padding:4px 8px; font-size:12px;" onclick="event.stopPropagation(); eliminarProductoAlmacen('${key}')">Borrar</button>
                         </td>
@@ -1292,7 +1326,7 @@ window.filtrarAlmacenTabla = function() {
                     <div class="prod-item caja-item-card" data-name="${p.nombre.toLowerCase()}" onclick="agregarAlCarritoConMultiplicador('${key}', this)">
                         <strong>${p.nombre}</strong>${textBarcode}<br>
                         <span style="color:var(--success); font-weight:bold;">$${p.precio.toFixed(2)}</span><br>
-                        <small>Stock: ${p.stock}</small><br>
+                        <small>Stock: ${parseFloat(p.stock.toFixed(3))}</small><br>
                         <input type="number" class="input-field qty-input-box" value="1" min="0.001" step="0.001" onclick="event.stopPropagation()" style="width:75px; text-align:center; padding:3px; margin-top:5px; display:inline-block;">
                     </div>
                 `;
@@ -1362,7 +1396,84 @@ window.filtrarAlmacenTabla = function() {
     }
 };
 
-        window.filtrarProductosCaja = function() {
+window.verificarClienteCaja = function(valor) {
+            const input = valor.trim();
+            const cajaInput = document.getElementById('caja-cliente');
+            
+            // Si el campo queda vacío, limpia el rastro de clientes anteriores para que asuma "EVENTUAL"
+            if(!input) {
+                cajaInput.removeAttribute('data-cedula');
+                return; 
+            }
+            
+            let encontrado = false;
+            let cliData = null;
+
+            for(let key in clientesCache) {
+                if(key === input || clientesCache[key].cedula === input || clientesCache[key].nombre.toLowerCase() === input.toLowerCase()) {
+                    encontrado = true;
+                    cliData = clientesCache[key];
+                    break;
+                }
+            }
+
+            if(encontrado) {
+                // Autocompleta inmediatamente el nombre si lo encuentra
+                cajaInput.value = cliData.nombre;
+                cajaInput.setAttribute('data-cedula', cliData.cedula);
+            } else {
+                // Abre modal para nuevo cliente si NO lo encuentra
+                document.getElementById('mod-cliente-cedula').value = input;
+                document.getElementById('mod-cliente-nombre').value = '';
+                document.getElementById('mod-cliente-telefono').value = '';
+                document.getElementById('mod-cliente-direccion').value = '';
+                document.getElementById('modal-nuevo-cliente').style.display = 'flex';
+                cajaInput.removeAttribute('data-cedula');
+            }
+        };        
+
+window.cerrarModalCliente = function() {
+            document.getElementById('modal-nuevo-cliente').style.display = 'none';
+        };
+
+        window.guardarNuevoCliente = function() {
+            const cedula = document.getElementById('mod-cliente-cedula').value.trim();
+            const nombre = document.getElementById('mod-cliente-nombre').value.trim().toUpperCase(); // Lo guardamos en mayúsculas para mantener orden
+            const telefono = document.getElementById('mod-cliente-telefono').value.trim();
+            const direccion = document.getElementById('mod-cliente-direccion').value.trim();
+
+            if(!nombre || !cedula) {
+                return alert("El nombre y la cédula son datos obligatorios.");
+            }
+
+            // Bloqueamos el botón temporalmente para evitar doble clic
+            const btn = event.target;
+            const textoOriginal = btn.innerText;
+            btn.innerText = "Guardando...";
+            btn.disabled = true;
+
+            const cliData = { cedula, nombre, telefono, direccion };
+
+            // Subimos los datos a la base de datos de Firebase
+            set(ref(db, `clientes/${cedula}`), cliData).then(() => {
+                // Autocompletamos la caja de cobro para facturar de inmediato
+                const cajaInput = document.getElementById('caja-cliente');
+                cajaInput.value = nombre;
+                cajaInput.setAttribute('data-cedula', cedula);
+                
+                // Restauramos el botón y cerramos el modal
+                btn.innerText = textoOriginal;
+                btn.disabled = false;
+                cerrarModalCliente();
+                
+            }).catch(error => {
+                alert("Error al guardar cliente en Firebase: " + error.message);
+                btn.innerText = textoOriginal;
+                btn.disabled = false;
+            });
+        };
+
+window.filtrarProductosCaja = function() {
             const val = document.getElementById('caja-buscar-prod').value.toLowerCase();
             document.querySelectorAll('.caja-item-card').forEach(card => {
                 card.style.display = card.getAttribute('data-name').includes(val) ? '' : 'none';
@@ -1485,7 +1596,7 @@ window.calcularCambioEfectivo = function() {
             try {
                 if(carrito.length === 0) return alert("La caja está vacía.");
                 const clienteInput = document.getElementById('caja-cliente');
-                const cliente = clienteInput.value.trim() || "Consumidor Final";
+                const cliente = clienteInput.value.trim() || "EVENTUAL";
                 const cedulaCliente = clienteInput.getAttribute('data-cedula') || "No registrada";
                 const condicion = document.getElementById('caja-condicion-pago').value;
                 
@@ -1711,7 +1822,7 @@ window.calcularCambioEfectivo = function() {
             f.items.forEach(i => {
                 tbody.innerHTML += `
                     <tr>
-                        <td>${i.cantidad}</td>
+                        <td>${parseFloat(i.cantidad.toFixed(3))}</td>
                         <td>${i.nombre}</td>
                         <td>$${i.precio.toFixed(2)}</td>
                         <td>$${(i.precio * i.cantidad).toFixed(2)}</td>
@@ -2168,7 +2279,7 @@ window.calcularCambioEfectivo = function() {
         
         container.innerHTML += `
             <div style="display:flex; justify-content:space-between; align-items:center; font-size:13px; margin-bottom:5px;">
-                <span>${item.cantidad}x ${item.nombre}</span>
+                <span>${parseFloat(item.cantidad.toFixed(3))}x ${item.nombre}</span>
                 <div>
                     <span style="margin-right: 8px;">$${subtotalItemUsd.toFixed(2)} (${subtotalItemBs.toFixed(2)} Bs)</span>
                     <button onclick="eliminarDelCarrito(${index})" style="background: var(--danger); color: white; border: none; border-radius: 3px; cursor: pointer; padding: 2px 6px; font-weight: bold;">X</button>
@@ -2644,6 +2755,7 @@ document.addEventListener('keydown', function(event) {
         const elementoActivo = document.activeElement;
         
         if (elementoActivo && (
+            elementoActivo.id === 'caja-cliente' || // <--- EXCLUYE EL CAMPO CLIENTE DEL COBRO AUTOMÁTICO
             elementoActivo.id === 'caja-barcode-input' || 
             elementoActivo.id === 'caja-buscar-prod' || 
             elementoActivo.id === 'almacen-buscar' || 
@@ -2794,11 +2906,32 @@ window.abrirLightboxZoom = function(src) {
         };
 
         window.exportarRespaldoTotal = function() {
+            if(rolActivo !== 'administrador') return alert("Solo el administrador principal puede realizar respaldos globales.");
+            
             if(!confirm("¿Desea descargar un respaldo completo de TODA la base de datos? (Esto puede tardar unos segundos dependiendo del tamaño)")) return;
             
-            get(ref(db)).then((snapshot) => {
-                if (snapshot.exists()) {
-                    const data = snapshot.val();
+            // Recolectar datos nodo por nodo para evitar el bloqueo de seguridad en la raíz (root)
+            Promise.all([
+                get(ref(db, 'configuracion')),
+                get(ref(db, 'almacen')),
+                get(ref(db, 'facturas')),
+                get(ref(db, 'clientes')),
+                get(ref(db, 'personal')),
+                get(ref(db, 'contadorNotas'))
+            ]).then((snapshots) => {
+                const data = {
+                    configuracion: snapshots[0].val() || null,
+                    almacen: snapshots[1].val() || null,
+                    facturas: snapshots[2].val() || null,
+                    clientes: snapshots[3].val() || null,
+                    personal: snapshots[4].val() || null,
+                    contadorNotas: snapshots[5].val() || null
+                };
+
+                // Limpiar nodos que estén vacíos para que el archivo quede limpio
+                Object.keys(data).forEach(key => { if(data[key] === null) delete data[key]; });
+
+                if (Object.keys(data).length > 0) {
                     const dataStr = JSON.stringify(data, null, 2);
                     const blob = new Blob([dataStr], { type: 'text/plain' });
                     const url = URL.createObjectURL(blob);
@@ -2810,12 +2943,14 @@ window.abrirLightboxZoom = function(src) {
                     link.download = `Respaldo_Global_Sistema_${fecha}.txt`;
                     link.click();
                 } else {
-                    alert("El servidor está vacío, no hay nada que respaldar.");
+                    alert("El servidor está vacío, no hay datos para respaldar.");
                 }
-            }).catch(err => alert("Error de conexión: " + err.message));
+            }).catch(err => alert("Error de conexión o permisos en Firebase: " + err.message));
         };
 
         window.importarRespaldoTotal = function(event) {
+            if(rolActivo !== 'administrador') return alert("Solo el administrador principal puede cargar respaldos globales.");
+            
             const file = event.target.files[0];
             if (!file) return;
 
@@ -2830,10 +2965,19 @@ window.abrirLightboxZoom = function(src) {
                     const datosGlobales = JSON.parse(e.target.result);
                     if(typeof datosGlobales !== 'object' || datosGlobales === null) throw new Error("Estructura inválida");
 
-                    set(ref(db), datosGlobales).then(() => {
-                        alert("CARGA GLOBAL EXITOSA.\nEl sistema se ha restaurado completamente. La página se reiniciará para aplicar los cambios.");
+                    // Subir datos nodo por nodo para evitar el bloqueo de escritura en la raíz
+                    const promesas = [];
+                    if (datosGlobales.configuracion !== undefined) promesas.push(set(ref(db, 'configuracion'), datosGlobales.configuracion));
+                    if (datosGlobales.almacen !== undefined) promesas.push(set(ref(db, 'almacen'), datosGlobales.almacen));
+                    if (datosGlobales.facturas !== undefined) promesas.push(set(ref(db, 'facturas'), datosGlobales.facturas));
+                    if (datosGlobales.clientes !== undefined) promesas.push(set(ref(db, 'clientes'), datosGlobales.clientes));
+                    if (datosGlobales.personal !== undefined) promesas.push(set(ref(db, 'personal'), datosGlobales.personal));
+                    if (datosGlobales.contadorNotas !== undefined) promesas.push(set(ref(db, 'contadorNotas'), datosGlobales.contadorNotas));
+
+                    Promise.all(promesas).then(() => {
+                        alert("✅ CARGA GLOBAL EXITOSA.\nEl sistema se ha restaurado completamente. La página se reiniciará para aplicar los cambios.");
                         location.reload();
-                    }).catch(err => alert("Error al subir datos al servidor: " + err.message));
+                    }).catch(err => alert("Error al subir datos al servidor (Reglas de Firebase): " + err.message));
                     
                 } catch (err) {
                     alert("Error: El archivo .txt seleccionado no es válido o está corrupto.");
